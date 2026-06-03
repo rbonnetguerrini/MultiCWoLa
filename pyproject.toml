@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multiclass-cwola"
+version = "0.1.0"
+description = "Multiclass Classification without Labels via Posterior Simplex Geometry (anonymous release)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "hydra-core>=1.3",
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "omegaconf>=2.3",
+  "pandas>=2.2",
+  "scikit-learn>=1.4",
+  "scipy>=1.12",
+  "torch>=2.2",
+  "torchvision>=0.17",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=24.4",
+  "pytest>=8.2",
+  "ruff>=0.5",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "W"]
+ignore = ["B008", "E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

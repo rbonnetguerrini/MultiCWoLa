@@ -1,0 +1,33 @@
+# Geometry-preserving Galaxy10 source-classifier finetune.
+#
+# Symmetry-only augmentations (rotation + h/v flip), no Mixup, no label
+# smoothing, no SAM. This profile is the negative control to
+# galaxy10_finetune_robust.yaml: prior runs showed that Mixup +
+# label smoothing populate the simplex interior and squash posterior
+# range, collapsing demix accuracy. We expect a "symmetry-only" finetune
+# to keep posteriors at the simplex vertices.
+
+defaults:
+  - default
+
+batch_size: 32
+epochs: 10
+lr: 5.0e-5
+backbone_lr: 1.0e-5
+weight_decay: 0.01
+early_stopping_patience: 4
+
+augmentation:
+  enabled: true
+  kind: symmetry
+
+mixup:
+  enabled: false
+  alpha: 0.0
+
+sam:
+  enabled: false
+  rho: 0.0
+
+label_smoothing: 0.0
+early_stopping_metric: val_loss

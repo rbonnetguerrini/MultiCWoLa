@@ -1,0 +1,4 @@
+name: realdata_hidden_priors
+description: Real-data run with hidden train labels and evaluation-only ground truth.
+suite: single
+

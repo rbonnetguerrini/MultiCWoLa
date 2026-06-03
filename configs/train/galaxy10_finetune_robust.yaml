@@ -1,0 +1,42 @@
+# Stage-1 training profile for unfrozen-backbone Galaxy10 fine-tuning with
+# the five regularizers introduced to stop the source classifier from
+# memorising mixture-ID through low-level image features.
+#
+# All flags below are opt-in and default off in `configs/train/default.yaml`.
+# Use this profile via:  python scripts/run_galaxy10.py train=galaxy10_finetune_robust ...
+
+defaults:
+  - default
+
+# Standard finetune optimizer settings (mirrors submit_galaxy10_finetune.sh).
+batch_size: 32                       # smaller batch helps mixup / SAM regularize
+epochs: 10
+lr: 5.0e-5
+backbone_lr: 1.0e-5
+weight_decay: 0.01
+early_stopping_patience: 4
+
+# (1) Strong, class-symmetry-respecting augmentation on training batches.
+augmentation:
+  enabled: true
+  kind: galaxy
+
+# (2) Intra-mixture Mixup. Same-mixture pairs only -> mixture label preserved.
+mixup:
+  enabled: true
+  alpha: 0.2
+
+# (3) Sharpness-Aware Minimization on the source-classifier loss.
+sam:
+  enabled: true
+  rho: 0.05
+
+# (4) Mixture label smoothing keeps posteriors off simplex corners,
+# preserving the (K-1)-subspace geometry the demix solver depends on.
+label_smoothing: 0.1
+
+# (5) Geometric-residual early stopping: monitor 1 - (energy of top K-1
+# singular components of the val mixture-posterior cloud). Stops training
+# when the cloud expands off the (K-1)-dim subspace, even if val NLL on
+# the mixture-ID task is still falling.
+early_stopping_metric: geometric_residual

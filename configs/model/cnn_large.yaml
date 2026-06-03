@@ -1,0 +1,9 @@
+name: cnn_large
+backbone: cnn
+channels: [64, 128, 256, 512]
+embedding_dim: 512
+dropout: 0.1
+bottleneck:
+  enabled: false
+  pi_init: identity_like
+  pi_temperature: 1.0

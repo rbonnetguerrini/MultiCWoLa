@@ -1,0 +1,35 @@
+# Posterior-preserving extension of galaxy10_symmetry_only.
+#
+# Adds class-invariant geometric jitter (translate, shear) and
+# physics-motivated stochastic ops (small Gaussian blur, additive noise)
+# on top of rotation + flips. No Mixup, no label smoothing, no SAM, no
+# photometric jitter -- those compress the simplex. See
+# regularization.py::build_train_transform("symmetry_plus").
+#
+# Same optimisation profile as galaxy10_symmetry_only so accuracy
+# differences are attributable to augmentation alone.
+
+defaults:
+  - default
+
+batch_size: 32
+epochs: 10
+lr: 5.0e-5
+backbone_lr: 1.0e-5
+weight_decay: 0.01
+early_stopping_patience: 4
+
+augmentation:
+  enabled: true
+  kind: symmetry_plus
+
+mixup:
+  enabled: false
+  alpha: 0.0
+
+sam:
+  enabled: false
+  rho: 0.0
+
+label_smoothing: 0.0
+early_stopping_metric: val_loss

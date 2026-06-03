@@ -1,0 +1,7 @@
+defaults:
+  - galaxy10_m20
+
+# Purity sweep cell (K=10, M=20), p=0.25: pi_m ~= 0.75*(1/K) + 0.25*e_{c(m)}.
+pi_mode: dirichlet
+pi_dirichlet_alpha: 1000.0
+condition_strength: 0.25

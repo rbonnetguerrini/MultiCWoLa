@@ -1,0 +1,10 @@
+defaults:
+  - galaxy10_m20
+
+# Purity sweep cell (K=10, M=20). With pi_dirichlet_alpha large the
+# Dirichlet draw is effectively uniform, so condition_strength=p yields
+# pi_m ~= (1-p) * (1/K) + p * e_{c(m)}. Here p=0.0: every mixture has
+# uniform class fractions (1/K) -- fully nonidentifiable.
+pi_mode: dirichlet
+pi_dirichlet_alpha: 1000.0
+condition_strength: 0.0

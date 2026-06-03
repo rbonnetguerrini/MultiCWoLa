@@ -1,0 +1,35 @@
+defaults:
+  - default
+  - override /data: galaxy10
+  - override /model: resnet50
+  - override /experiment: galaxy10_hidden_priors
+  - _self_
+
+task: real
+
+train:
+  batch_size: 64
+  epochs: 30
+  lr: 1.0e-3
+  backbone_lr: 1.0e-5            # Used only if backbone has trainable params.
+  weight_decay: 0.01
+  early_stopping_patience: 6
+  bottleneck_warmup_epochs: 3
+  num_workers: 4
+  scheduler:
+    type: cosine_warmup
+    warmup_frac: 0.1
+    min_lr_ratio: 0.0
+
+# Wei baselines need true Pi; keep on for the comparison story but train fewer epochs.
+wei:
+  train_overrides:
+    epochs: 15
+
+# Stage-2 distillation classifier (K-way on recovered soft labels).
+stage2:
+  enabled: true
+  hidden_dims: [256, 128]
+  epochs: 25
+  lr: 1.0e-3
+  weight_decay: 1.0e-4

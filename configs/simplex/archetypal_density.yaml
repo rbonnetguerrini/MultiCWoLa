@@ -1,0 +1,10 @@
+name: archetypal_density
+method: archetypal_density
+density_power: 1.0
+init_strategies: [farthest, spread, corner]
+num_restarts: 6
+refine_max_iter: 80
+refine_tol: 1.0e-5
+refine_ridge: 1.0e-4
+preprocess: none
+preprocess_dim: -1

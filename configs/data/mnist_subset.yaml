@@ -1,0 +1,23 @@
+name: mnist_subset
+kind: real
+dataset_name: mnist
+K: 3
+M: 4
+class_subset: [0, 1, 2]
+train_per_source: 200
+val_per_source: 100
+test_per_source: 120
+val_fraction: 0.2
+flatten: false
+normalize: true
+data_root: ./outputs/datasets
+download: true
+pi_mode: dirichlet
+pi_dirichlet_alpha: 0.8
+pi_similarity: 0.9
+condition_strength: 0.35
+seed: ${seed}
+shift:
+  enabled: false
+  type: none
+  scale: 0.0

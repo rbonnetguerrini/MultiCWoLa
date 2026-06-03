@@ -1,0 +1,13 @@
+batch_size: 64
+epochs: 20
+lr: 0.001
+weight_decay: 0.01
+early_stopping_patience: 5
+num_workers: 0
+device: auto
+bottleneck_warmup_epochs: 0
+scheduler:
+  type: cosine_warmup
+  warmup_frac: 0.05
+  min_lr_ratio: 0.0
+

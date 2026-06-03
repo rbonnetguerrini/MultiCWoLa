@@ -1,0 +1,4 @@
+name: clean_identifiable
+description: Well-conditioned identifiable synthetic setting.
+suite: single
+

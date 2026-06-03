@@ -1,0 +1,13 @@
+name: archetypal_stability_consensus
+method: archetypal
+max_iter: 60
+tol: 1.0e-5
+ridge: 1.0e-4
+num_restarts: 8
+include_heuristic_candidate: true
+selector: stability_consensus
+num_subsamples: 8
+subsample_fraction: 0.7
+use_bootstrap: false
+preprocess: none
+preprocess_dim: -1

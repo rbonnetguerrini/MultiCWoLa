@@ -1,0 +1,7 @@
+defaults:
+  - galaxy10
+
+M: 50
+train_per_source: 240           # ~12k mixture train across M sources
+val_per_source: 40
+test_per_source: 50

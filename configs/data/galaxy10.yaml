@@ -1,0 +1,26 @@
+name: galaxy10
+kind: real
+dataset_name: galaxy10_decals
+K: 10
+M: 10
+class_subset: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+train_per_source: 1000          # ~10k mixture train across M sources
+val_per_source: 150
+test_per_source: 200
+val_fraction: 0.2
+flatten: false
+normalize: true                 # x stays in [0, 1]; ImageNet norm applied inside backbone
+data_root: ./outputs/datasets
+h5_filename: Galaxy10_DECals.h5
+image_size: 224
+cache_dir: ${output_root}/datasets/galaxy10
+test_fraction: 0.2              # stratified split off the full h5
+pi_mode: dirichlet
+pi_dirichlet_alpha: 0.5         # moderately sparse mixtures
+pi_similarity: 0.9
+condition_strength: 0.25
+seed: ${seed}
+shift:
+  enabled: false
+  type: none
+  scale: 0.0
