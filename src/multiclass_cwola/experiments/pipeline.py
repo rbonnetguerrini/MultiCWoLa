@@ -50,6 +50,7 @@ from multiclass_cwola.utils.repro import (
 from multiclass_cwola.visualization.plots import (
     plot_kspace_scatter,
     plot_metric_curve,
+    plot_mixture_confusion,
     plot_mspace_simplex,
     plot_pi_heatmap,
 )
@@ -1145,6 +1146,17 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
                 np.asarray(bundle.pi),
                 output_dir / "plots" / "pi_oracle_heatmap.png",
                 title=f"Pi oracle  (M={bundle.num_sources}, K={bundle.num_classes})",
+            )
+        # MxM mixture-recovery confusion: true vs predicted mixture ID. Needs no
+        # class labels, so it runs in inference-only mode too. The source
+        # posterior g(x) over the M mixtures gives the predicted mixture.
+        if bundle.test.source is not None:
+            plot_mixture_confusion(
+                bundle.test.source,
+                test_g.argmax(axis=1),
+                output_dir / "plots" / "mixture_confusion.png",
+                pi=np.asarray(bundle.pi) if has_oracle_mixing else None,
+                title=f"Mixture recovery (M={bundle.num_sources})",
             )
 
     metrics |= bundle.metadata

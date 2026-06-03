@@ -302,6 +302,109 @@ def plot_mspace_simplex(
     plt.close(fig)
 
 
+def plot_mixture_confusion(
+    true_mixture: np.ndarray,
+    pred_mixture: np.ndarray,
+    out_path: str | Path,
+    *,
+    pi: np.ndarray | None = None,
+    mixture_priors: np.ndarray | None = None,
+    source_labels: list[str] | None = None,
+    title: str = "Mixture recovery (true vs predicted)",
+) -> None:
+    """Heatmap of true mixture ID vs predicted mixture ID -- an MxM artifact check.
+
+    A *fair* multi-CWoLa classifier should only be able to tell two mixtures
+    apart to the extent their latent-class compositions differ. If the
+    empirical (true, predicted)-mixture confusion is much more diagonal than
+    the composition-limited reference computed from ``pi``, the classifier is
+    exploiting a per-mixture artifact in the data (e.g. file/batch provenance)
+    rather than the underlying class composition.
+
+    Parameters
+    ----------
+    true_mixture, pred_mixture : (N,) integer mixture/source IDs.
+    out_path : where to save the PNG.
+    pi : optional (M, K) row-stochastic mixing matrix (rows = mixtures, sum to
+        1 over latent classes). When given, a second panel shows the best
+        confusion achievable using only the jet's latent class -- the most
+        information any composition-based separator can have -- and reports the
+        mean diagonal recovery for comparison.
+    mixture_priors : optional (M,) mixture sampling fractions; defaults to the
+        empirical fraction of ``true_mixture``.
+    source_labels : optional tick labels for the M mixtures.
+    title : figure title.
+    """
+    true_mixture = np.asarray(true_mixture).astype(int)
+    pred_mixture = np.asarray(pred_mixture).astype(int)
+    M = int(max(true_mixture.max(initial=0), pred_mixture.max(initial=0))) + 1
+    if pi is not None:
+        M = max(M, np.asarray(pi).shape[0])
+
+    def _row_norm_conf(t: np.ndarray, p: np.ndarray) -> np.ndarray:
+        cm = np.zeros((M, M), dtype=np.float64)
+        np.add.at(cm, (t, p), 1.0)
+        return cm / np.maximum(cm.sum(axis=1, keepdims=True), 1.0)
+
+    emp = _row_norm_conf(true_mixture, pred_mixture)
+    emp_diag = float(np.mean(np.diag(emp)))
+
+    ref = None
+    ref_diag = None
+    if pi is not None:
+        pi = np.asarray(pi, dtype=np.float64)
+        Mp = pi.shape[0]
+        if mixture_priors is None:
+            counts = np.bincount(true_mixture, minlength=M).astype(np.float64)[:Mp]
+            priors = counts / max(counts.sum(), 1.0)
+        else:
+            priors = np.asarray(mixture_priors, dtype=np.float64)
+            priors = priors / max(priors.sum(), 1e-12)
+        # Bayes-optimal hard mixture decision given only the latent class k:
+        #   p(m'|k) ~ priors[m'] * pi[m', k]  ->  predict argmax over m'.
+        joint = priors[:, None] * pi  # (M, K)
+        best_m = joint.argmax(axis=0)  # (K,)
+        ref = np.zeros((M, M), dtype=np.float64)
+        for m in range(Mp):
+            for k in range(pi.shape[1]):
+                ref[m, best_m[k]] += pi[m, k]
+        ref_diag = float(np.mean(np.diag(ref)[:Mp]))
+
+    def _draw(ax, cm: np.ndarray, panel_title: str):
+        im = ax.imshow(cm, cmap="magma", vmin=0.0, vmax=1.0, aspect="auto")
+        ax.set_xlabel("predicted mixture")
+        ax.set_ylabel("true mixture")
+        ax.set_xticks(range(M))
+        ax.set_yticks(range(M))
+        if source_labels is not None:
+            ax.set_xticklabels(source_labels, rotation=90, fontsize=6)
+            ax.set_yticklabels(source_labels, fontsize=6)
+        if M <= 12:
+            for i in range(M):
+                for j in range(M):
+                    ax.text(
+                        j, i, f"{cm[i, j]:.2f}", ha="center", va="center",
+                        color="white" if cm[i, j] < 0.5 else "black", fontsize=6,
+                    )
+        ax.set_title(panel_title)
+        return im
+
+    if ref is None:
+        fig, ax = plt.subplots(figsize=(max(4, 0.45 * M + 2), max(4, 0.45 * M + 2)))
+        im = _draw(ax, emp, f"empirical (mean diag={emp_diag:.3f})")
+        fig.colorbar(im, ax=ax, fraction=0.046)
+    else:
+        fig, axes = plt.subplots(
+            1, 2, figsize=(max(8, 0.9 * M + 3), max(4, 0.45 * M + 2))
+        )
+        _draw(axes[0], emp, f"empirical (mean diag={emp_diag:.3f})")
+        im = _draw(axes[1], ref, f"composition-limited (mean diag={ref_diag:.3f})")
+        fig.colorbar(im, ax=axes, fraction=0.025)
+    fig.suptitle(title)
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_metric_curve(
     frame: pd.DataFrame,
     x_col: str,
