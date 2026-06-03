@@ -21,6 +21,7 @@ from multiclass_cwola.baselines.oracle import run_oracle_supervised
 from multiclass_cwola.baselines.pairwise import run_source_ovr_baseline
 from multiclass_cwola.baselines.wei import run_wei_ccm
 from multiclass_cwola.calibration.posthoc import calibrate_logits, fit_calibrator
+from multiclass_cwola.data.arrays import build_array_dataset
 from multiclass_cwola.data.real import build_real_dataset
 from multiclass_cwola.data.synthetic import build_synthetic_dataset
 from multiclass_cwola.evaluation.matching import align_probabilities, match_label_permutation
@@ -48,8 +49,8 @@ from multiclass_cwola.utils.repro import (
 )
 from multiclass_cwola.visualization.plots import (
     plot_kspace_scatter,
-    plot_mspace_simplex,
     plot_metric_curve,
+    plot_mspace_simplex,
     plot_pi_heatmap,
 )
 
@@ -102,6 +103,8 @@ def _apply_named_experiment_overrides(config: dict[str, Any]) -> dict[str, Any]:
 def _build_bundle(config: dict[str, Any]):
     if config["data"]["kind"] == "synthetic":
         return build_synthetic_dataset(config["data"])
+    if config["data"]["kind"] == "arrays":
+        return build_array_dataset(config["data"])
     return build_real_dataset(config["data"])
 
 
@@ -109,6 +112,28 @@ def _adapt_model_config_for_bundle(config: dict[str, Any], bundle) -> None:
     """Apply data-dependent model defaults before persisting the resolved config."""
     if bundle.task_type == "image" and str(config["model"]["backbone"]) == "mlp":
         config["model"]["backbone"] = "cnn"
+
+
+def _has_labels(bundle) -> bool:
+    return bundle.val.y is not None and bundle.test.y is not None
+
+
+def _has_oracle_mixing(bundle) -> bool:
+    return bundle.pi is not None and bundle.source_given_class is not None
+
+
+def _empty_classification_metrics() -> dict[str, float | None]:
+    return {"accuracy": None, "macro_f1": None, "log_loss": None, "ece": None}
+
+
+def _format_metric(value: Any, precision: int = 4) -> str:
+    if value is None:
+        return "N/A"
+    if isinstance(value, float) and np.isnan(value):
+        return "nan"
+    if isinstance(value, float | np.floating):
+        return f"{float(value):.{precision}f}"
+    return str(value)
 
 
 def _aligned_metrics(
@@ -132,11 +157,13 @@ def _aligned_metrics(
 def _safe_aligned_metrics(
     val_probabilities: np.ndarray,
     test_probabilities: np.ndarray,
-    val_labels: np.ndarray,
-    test_labels: np.ndarray,
+    val_labels: np.ndarray | None,
+    test_labels: np.ndarray | None,
     num_classes: int,
     num_bins: int,
-) -> tuple[dict[str, float], dict[int, int], np.ndarray]:
+) -> tuple[dict[str, float | None], dict[int, int], np.ndarray]:
+    if val_labels is None or test_labels is None:
+        return _empty_classification_metrics(), {}, test_probabilities
     if not np.all(np.isfinite(val_probabilities)) or not np.all(np.isfinite(test_probabilities)):
         metrics = {"accuracy": np.nan, "macro_f1": np.nan, "log_loss": np.nan, "ece": np.nan}
         return metrics, {}, test_probabilities
@@ -262,9 +289,14 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
     bundle = _build_bundle(cfg)
     _adapt_model_config_for_bundle(cfg, bundle)
     reuse_checkpoints = bool(cfg.get("reuse_checkpoints", False))
+    has_labels = _has_labels(bundle)
+    has_oracle_mixing = _has_oracle_mixing(bundle)
 
     save_config(output_dir / "resolved_config.yaml", OmegaConf.create(cfg))
-    save_json(output_dir / "mixture_metadata.json", bundle.metadata | {"pi": bundle.pi.tolist()})
+    mixture_metadata = dict(bundle.metadata)
+    if bundle.pi is not None:
+        mixture_metadata["pi"] = bundle.pi.tolist()
+    save_json(output_dir / "mixture_metadata.json", mixture_metadata)
 
     selected_method = _selected_method_name(cfg)
     if selected_method == "demix_alg4_input":
@@ -291,6 +323,8 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
             "task": cfg["task"],
             "num_sources": bundle.num_sources,
             "num_classes": bundle.num_classes,
+            "has_labels": has_labels,
+            "has_oracle_mixing": has_oracle_mixing,
             "selected_method": selected_method,
             "method_label": "Demix Alg. 4 input",
             "method_information_level": "fair",
@@ -404,6 +438,8 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
             "task": cfg["task"],
             "num_sources": bundle.num_sources,
             "num_classes": bundle.num_classes,
+            "has_labels": has_labels,
+            "has_oracle_mixing": has_oracle_mixing,
             "selected_method": selected_method,
             "method_label": "Demix Alg. 4 posterior",
             "method_information_level": "fair",
@@ -455,7 +491,7 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
         simplex_fit.vertices,
     )
 
-    simplex_metrics, simplex_mapping, aligned_alpha_test = _aligned_metrics(
+    simplex_metrics, simplex_mapping, aligned_alpha_test = _safe_aligned_metrics(
         alpha_val,
         alpha_test,
         bundle.val.y,
@@ -470,6 +506,8 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
         "task": cfg["task"],
         "num_sources": bundle.num_sources,
         "num_classes": bundle.num_classes,
+        "has_labels": has_labels,
+        "has_oracle_mixing": has_oracle_mixing,
         "source_nll_before": calibration.nll_before,
         "source_nll_after": calibration.nll_after,
         "source_val_accuracy_before": source_val_before["accuracy"],
@@ -507,20 +545,35 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
         ),
         "simplex_preprocess": str(cfg["simplex"].get("preprocess", "none")),
         "simplex_degenerate": simplex_fit.diagnostics.degenerate,
-        "posterior_l1_error": posterior_l1_error(aligned_alpha_test, bundle.test.true_posteriors),
-        "vertex_recovery_error": vertex_recovery_error(
-            simplex_fit.vertices, bundle.source_given_class
+        "posterior_l1_error": (
+            posterior_l1_error(aligned_alpha_test, bundle.test.true_posteriors)
+            if has_labels
+            else None
         ),
-        "simplex_oracle_geometric_distance": simplex_geometric_distance(
-            simplex_fit.vertices,
-            bundle.source_given_class,
+        "vertex_recovery_error": (
+            vertex_recovery_error(simplex_fit.vertices, bundle.source_given_class)
+            if has_oracle_mixing
+            else None
         ),
-        "simplex_oracle_relative_geometric_distance": simplex_geometric_distance(
-            simplex_fit.vertices,
-            bundle.source_given_class,
-            normalize=True,
+        "simplex_oracle_geometric_distance": (
+            simplex_geometric_distance(simplex_fit.vertices, bundle.source_given_class)
+            if has_oracle_mixing
+            else None
         ),
-        "mixing_matrix_recovery_error": mixing_matrix_recovery_error(simplex_fit.pi_hat, bundle.pi),
+        "simplex_oracle_relative_geometric_distance": (
+            simplex_geometric_distance(
+                simplex_fit.vertices,
+                bundle.source_given_class,
+                normalize=True,
+            )
+            if has_oracle_mixing
+            else None
+        ),
+        "mixing_matrix_recovery_error": (
+            mixing_matrix_recovery_error(simplex_fit.pi_hat, bundle.pi)
+            if has_oracle_mixing
+            else None
+        ),
     }
     _is_bottleneck = bool(getattr(source_model, "returns_log_probs", False))
     _method_key = "ours_bottleneck" if _is_bottleneck else "ours_linear"
@@ -554,7 +607,7 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
             extra_alpha_test = batch_simplex_least_squares(
                 transform_simplex_points(test_g, extra_fit), extra_fit.vertices
             )
-            extra_metrics_dict, _, _ = _aligned_metrics(
+            extra_metrics_dict, _, _ = _safe_aligned_metrics(
                 extra_alpha_val,
                 extra_alpha_test,
                 bundle.val.y,
@@ -566,8 +619,10 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
             metrics[f"method_{extra_name}_macro_f1"] = extra_metrics_dict["macro_f1"]
             metrics[f"method_{extra_name}_log_loss"] = extra_metrics_dict["log_loss"]
             metrics[f"method_{extra_name}_ece"] = extra_metrics_dict["ece"]
-            metrics[f"method_{extra_name}_vertex_recovery_error"] = vertex_recovery_error(
-                extra_fit.vertices, bundle.source_given_class
+            metrics[f"method_{extra_name}_vertex_recovery_error"] = (
+                vertex_recovery_error(extra_fit.vertices, bundle.source_given_class)
+                if has_oracle_mixing
+                else None
             )
             metrics[f"method_{extra_name}_reconstruction_error"] = (
                 extra_fit.diagnostics.reconstruction_error
@@ -642,7 +697,7 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
             transform_simplex_points(low_rank_test_g, low_rank_fit),
             low_rank_fit.vertices,
         )
-        low_rank_metrics, _, aligned_low_rank_test = _aligned_metrics(
+        low_rank_metrics, _, aligned_low_rank_test = _safe_aligned_metrics(
             low_rank_alpha_val,
             low_rank_alpha_test,
             bundle.val.y,
@@ -659,16 +714,23 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
         metrics[f"{low_rank_name}_macro_f1"] = low_rank_metrics["macro_f1"]
         metrics[f"{low_rank_name}_log_loss"] = low_rank_metrics["log_loss"]
         metrics[f"{low_rank_name}_ece"] = low_rank_metrics["ece"]
-        metrics[f"{low_rank_name}_posterior_l1_error"] = posterior_l1_error(
-            aligned_low_rank_test,
-            bundle.test.true_posteriors,
+        metrics[f"{low_rank_name}_posterior_l1_error"] = (
+            posterior_l1_error(
+                aligned_low_rank_test,
+                bundle.test.true_posteriors,
+            )
+            if has_labels
+            else None
         )
-        metrics[f"{low_rank_name}_vertex_recovery_error"] = vertex_recovery_error(
-            low_rank_fit.vertices,
-            bundle.source_given_class,
+        metrics[f"{low_rank_name}_vertex_recovery_error"] = (
+            vertex_recovery_error(low_rank_fit.vertices, bundle.source_given_class)
+            if has_oracle_mixing
+            else None
         )
         metrics[f"{low_rank_name}_simplex_oracle_geometric_distance"] = (
             simplex_geometric_distance(low_rank_fit.vertices, bundle.source_given_class)
+            if has_oracle_mixing
+            else None
         )
         metrics[f"{low_rank_name}_simplex_oracle_relative_geometric_distance"] = (
             simplex_geometric_distance(
@@ -676,6 +738,8 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
                 bundle.source_given_class,
                 normalize=True,
             )
+            if has_oracle_mixing
+            else None
         )
         metrics[f"{low_rank_name}_simplex_reconstruction_error"] = (
             low_rank_fit.diagnostics.reconstruction_error
@@ -711,7 +775,9 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
                     "nll_after": low_rank_calibration.nll_after,
                 },
                 "vertices": low_rank_fit.vertices.tolist(),
-                "oracle_vertices": bundle.source_given_class.tolist(),
+                "oracle_vertices": (
+                    bundle.source_given_class.tolist() if has_oracle_mixing else None
+                ),
                 "diagnostics": {
                     "reconstruction_error": low_rank_fit.diagnostics.reconstruction_error,
                     "raw_reconstruction_error": low_rank_fit.diagnostics.raw_reconstruction_error,
@@ -776,7 +842,7 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
         stage2_test = infer_classifier(
             stage2_model, bundle.test.x, int(cfg["train"]["batch_size"]), device
         )
-        stage2_metrics, _, _ = _aligned_metrics(
+        stage2_metrics, _, _ = _safe_aligned_metrics(
             stage2_val.probabilities,
             stage2_test.probabilities,
             bundle.val.y,
@@ -792,7 +858,7 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
         run_oracle_baseline = bool(baselines_cfg.get("oracle", True))
         run_ovr_baseline = bool(baselines_cfg.get("ovr", True))
 
-        if run_oracle_baseline:
+        if run_oracle_baseline and has_labels and bundle.train.y is not None:
             oracle_outputs, oracle_history = run_oracle_supervised(
                 model_cfg=cfg["model"],
                 train_cfg=cfg["train"],
@@ -872,7 +938,7 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
                 checkpoint_dir=(output_dir / "checkpoints" if cfg["save_checkpoints"] else None),
                 reuse_checkpoints=reuse_checkpoints,
             )
-            ovr_metrics, _, _ = _aligned_metrics(
+            ovr_metrics, _, _ = _safe_aligned_metrics(
                 ovr_val_soft,
                 ovr_test_soft,
                 bundle.val.y,
@@ -882,19 +948,20 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
             )
             metrics |= {f"ovr_{key}": value for key, value in ovr_metrics.items()}
 
-        kp_val = run_known_prior_oracle(val_g, bundle.source_given_class)
-        kp_test = run_known_prior_oracle(test_g, bundle.source_given_class)
-        kp_metrics, _, _ = _aligned_metrics(
-            kp_val,
-            kp_test,
-            bundle.val.y,
-            bundle.test.y,
-            num_classes=bundle.num_classes,
-            num_bins=int(cfg["eval"]["num_bins"]),
-        )
-        metrics |= {f"known_prior_demix_{key}": value for key, value in kp_metrics.items()}
+        if has_oracle_mixing:
+            kp_val = run_known_prior_oracle(val_g, bundle.source_given_class)
+            kp_test = run_known_prior_oracle(test_g, bundle.source_given_class)
+            kp_metrics, _, _ = _safe_aligned_metrics(
+                kp_val,
+                kp_test,
+                bundle.val.y,
+                bundle.test.y,
+                num_classes=bundle.num_classes,
+                num_bins=int(cfg["eval"]["num_bins"]),
+            )
+            metrics |= {f"known_prior_demix_{key}": value for key, value in kp_metrics.items()}
 
-        if cfg.get("run_wei_baselines", True):
+        if cfg.get("run_wei_baselines", True) and has_oracle_mixing:
             wei_cfg = cfg.get("wei") or {}
             wei_train_cfg = dict(cfg["train"])
             if isinstance(wei_cfg, dict):
@@ -920,7 +987,7 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
                     device=device,
                     **runner_kwargs,
                 )
-                wei_metrics, _, _ = _aligned_metrics(
+                wei_metrics, _, _ = _safe_aligned_metrics(
                     wei_result.val_probabilities,
                     wei_result.test_probabilities,
                     bundle.val.y,
@@ -975,16 +1042,19 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
             with torch.no_grad():
                 bottleneck_pi_hat_MK = source_model.head.pi().detach().cpu().numpy()
             bottleneck_vertices_M = bottleneck_pi_hat_MK.T
-        _, bn_mapping = match_label_permutation(
-            bundle.val.y,
-            bottleneck_alpha_val.argmax(axis=1),
-            num_classes=bundle.num_classes,
-        )
-        alpha_test_k = align_probabilities(
-            bottleneck_alpha_test,
-            bn_mapping,
-            num_classes=bundle.num_classes,
-        )
+        if has_labels:
+            _, bn_mapping = match_label_permutation(
+                bundle.val.y,
+                bottleneck_alpha_val.argmax(axis=1),
+                num_classes=bundle.num_classes,
+            )
+            alpha_test_k = align_probabilities(
+                bottleneck_alpha_test,
+                bn_mapping,
+                num_classes=bundle.num_classes,
+            )
+        else:
+            alpha_test_k = bottleneck_alpha_test
     else:
         alpha_test_k = aligned_alpha_test
     np.save(output_dir / "alpha_test.npy", alpha_test_k)
@@ -992,6 +1062,8 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
         np.save(output_dir / "test_true_labels.npy", bundle.test.y)
 
     if cfg["save_plots"]:
+        plot_labels = bundle.test.y if has_labels else bundle.test.source
+        plot_label_name = "class" if has_labels else "source"
         kspace_title = (
             f"Decoded latent posterior --bottleneck (K={bundle.num_classes})"
             if is_bottleneck
@@ -999,10 +1071,11 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
         )
         plot_kspace_scatter(
             alpha_test_k,
-            bundle.test.y,
+            plot_labels,
             out_path=output_dir / "plots" / "kspace_posterior.png",
             max_points=int(cfg["eval"]["plot_max_points"]),
             title=kspace_title,
+            label_name=plot_label_name,
         )
         _max_pts = int(cfg["eval"]["plot_max_points"])
         if is_bottleneck and bottleneck_alpha_test is not None and bottleneck_vertices_M is not None:
@@ -1011,20 +1084,22 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
                 bn_reconstructed_g,
                 bottleneck_vertices_M,
                 None,
-                bundle.test.y,
+                plot_labels,
                 out_path=output_dir / "plots" / "mspace_posterior.png",
                 max_points=_max_pts,
                 title=f"Source posterior geometry --bottleneck (M={bundle.num_sources}, K={bundle.num_classes})",
+                label_name=plot_label_name,
             )
         else:
             plot_mspace_simplex(
                 test_g,
                 simplex_fit.vertices,
-                bundle.source_given_class,
-                bundle.test.y,
+                bundle.source_given_class if has_oracle_mixing else None,
+                plot_labels,
                 out_path=output_dir / "plots" / "mspace_posterior.png",
                 max_points=_max_pts,
                 title=f"Source posterior geometry --post-hoc (M={bundle.num_sources}, K={bundle.num_classes})",
+                label_name=plot_label_name,
             )
         curves = pd.DataFrame(
             {
@@ -1053,7 +1128,7 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
             pi_hat_np = simplex_fit.pi_hat  # (M, K) row-stochastic from _estimate_pi_from_vertices
             _pi_align_map = simplex_mapping
         # Permute columns to match true class ordering (same alignment applied to alpha).
-        if pi_hat_np is not None and _pi_align_map:
+        if pi_hat_np is not None and _pi_align_map and has_labels:
             pi_hat_aligned = np.zeros_like(pi_hat_np)
             for pred_k, true_k in _pi_align_map.items():
                 if pred_k < pi_hat_np.shape[1] and true_k < pi_hat_np.shape[1]:
@@ -1065,11 +1140,12 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
                 output_dir / "plots" / "pi_hat_heatmap.png",
                 title=f"Pi_hat  (M={bundle.num_sources}, K={bundle.num_classes})",
             )
-        plot_pi_heatmap(
-            np.asarray(bundle.pi),
-            output_dir / "plots" / "pi_oracle_heatmap.png",
-            title=f"Pi oracle  (M={bundle.num_sources}, K={bundle.num_classes})",
-        )
+        if has_oracle_mixing:
+            plot_pi_heatmap(
+                np.asarray(bundle.pi),
+                output_dir / "plots" / "pi_oracle_heatmap.png",
+                title=f"Pi oracle  (M={bundle.num_sources}, K={bundle.num_classes})",
+            )
 
     metrics |= bundle.metadata
     metrics |= runtime_memory_summary(run_start)
@@ -1088,29 +1164,34 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
         "decoded_alpha_train": alpha_train,
         "decoded_alpha_val": alpha_val,
         "decoded_alpha_test": alpha_test,
-        "decoded_alpha_test_aligned_eval": aligned_alpha_test,
         "fitted_vertex_order": class_alignment,
         "class_alignment": class_alignment,
-        "oracle_vertices_M_eval": bundle.source_given_class,
         "pi_hat_MK": np.empty((0, 0)) if simplex_fit.pi_hat is None else simplex_fit.pi_hat,
-        "simplex_mapping_pairs_eval": np.array(sorted(simplex_mapping.items()), dtype=int),
         # Backward-compatible aliases from the first artifact export.
         "vertices": simplex_fit.vertices,
         "pi_hat": np.empty((0, 0)) if simplex_fit.pi_hat is None else simplex_fit.pi_hat,
         "alpha_train": alpha_train,
         "alpha_val": alpha_val,
         "alpha_test": alpha_test,
-        "aligned_alpha_test": aligned_alpha_test,
-        "simplex_mapping": np.array(sorted(simplex_mapping.items()), dtype=int),
     }
+    if has_labels:
+        artifact_arrays |= {
+            "decoded_alpha_test_aligned_eval": aligned_alpha_test,
+            "simplex_mapping_pairs_eval": np.array(sorted(simplex_mapping.items()), dtype=int),
+            "aligned_alpha_test": aligned_alpha_test,
+            "simplex_mapping": np.array(sorted(simplex_mapping.items()), dtype=int),
+        }
+    if has_oracle_mixing:
+        artifact_arrays["oracle_vertices_M_eval"] = bundle.source_given_class
     if bottleneck_alpha_train is not None:
         artifact_arrays |= {
             "bottleneck_alpha_train": bottleneck_alpha_train,
             "bottleneck_alpha_val": bottleneck_alpha_val,
             "bottleneck_alpha_test": bottleneck_alpha_test,
-            "bottleneck_alpha_test_aligned_eval": alpha_test_k,
             "bottleneck_class_alignment": bottleneck_class_alignment,
         }
+        if has_labels:
+            artifact_arrays["bottleneck_alpha_test_aligned_eval"] = alpha_test_k
     if bottleneck_vertices_M is not None:
         artifact_arrays["bottleneck_pi_hat"] = bottleneck_vertices_M
         artifact_arrays["bottleneck_vertices_M"] = bottleneck_vertices_M
@@ -1130,10 +1211,10 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
                     "K_by_M: fitted_vertices_M[k, m] = estimated P(source=m | fitted vertex k); "
                     "decoding solves min ||alpha @ fitted_vertices_M - g_theta(x)||_2^2"
                 ),
-                "oracle_vertices_M_eval": (
+                **({"oracle_vertices_M_eval": (
                     "K_by_M: oracle_vertices_M_eval[k, m] = true P(source=m | class=k); "
                     "evaluation-only"
-                ),
+                )} if has_oracle_mixing else {}),
                 "pi_hat_MK": "M_by_K row-stochastic estimate derived from fitted vertices; evaluation/diagnostic",
                 "bottleneck_pi_hat": (
                     "K_by_M, matching fitted_vertices_M; transpose gives the M_by_K matrix "
@@ -1141,6 +1222,8 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
                 ),
             },
             "arrays": {key: list(value.shape) for key, value in artifact_arrays.items()},
+            "has_labels": has_labels,
+            "has_oracle_mixing": has_oracle_mixing,
             "class_alignment": class_alignment.tolist(),
             "class_alignment_meaning": (
                 "evaluation-only map from fitted coordinate index to latent class index; "
@@ -1154,8 +1237,12 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
             "prior_free_fit_uses_oracle_vertices": False,
             "kspace_plot_source": (
                 "bottleneck_alpha_test_aligned_eval"
-                if is_bottleneck
+                if is_bottleneck and has_labels
                 else "decoded_alpha_test_aligned_eval"
+                if has_labels
+                else "bottleneck_alpha_test"
+                if is_bottleneck
+                else "decoded_alpha_test"
             ),
         },
     )
@@ -1163,11 +1250,13 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
         output_dir / "simplex_details.json",
         {
             "vertices": simplex_fit.vertices.tolist(),
-            "oracle_vertices": bundle.source_given_class.tolist(),
+            "oracle_vertices": (
+                bundle.source_given_class.tolist() if has_oracle_mixing else None
+            ),
             "oracle_geometric_distance": metrics["simplex_oracle_geometric_distance"],
-            "oracle_relative_geometric_distance": metrics[
-                "simplex_oracle_relative_geometric_distance"
-            ],
+            "oracle_relative_geometric_distance": (
+                metrics["simplex_oracle_relative_geometric_distance"]
+            ),
             "pi_hat": None if simplex_fit.pi_hat is None else simplex_fit.pi_hat.tolist(),
             "diagnostics": {
                 "reconstruction_error": simplex_fit.diagnostics.reconstruction_error,
@@ -1195,10 +1284,15 @@ def run_experiment(config: DictConfig | dict[str, Any]) -> RunArtifacts:
         f"Experiment: {cfg['experiment']['name']}",
         f"Task: {cfg['task']}",
         f"Seed: {cfg['seed']}",
-        f"Method accuracy: {metrics[f'{_method_key}_accuracy']:.4f}",
-        f"Method macro F1: {metrics[f'{_method_key}_macro_f1']:.4f}",
-        f"Posterior L1 error: {metrics['posterior_l1_error']}",
-        f"Simplex oracle relative distance: {metrics['simplex_oracle_relative_geometric_distance']}",
+        f"Evaluation labels available: {has_labels}",
+        f"Oracle mixing available: {has_oracle_mixing}",
+        f"Method accuracy: {_format_metric(metrics[f'{_method_key}_accuracy'])}",
+        f"Method macro F1: {_format_metric(metrics[f'{_method_key}_macro_f1'])}",
+        f"Posterior L1 error: {_format_metric(metrics['posterior_l1_error'])}",
+        (
+            "Simplex oracle relative distance: "
+            f"{_format_metric(metrics['simplex_oracle_relative_geometric_distance'])}"
+        ),
         f"Simplex degenerate: {metrics['simplex_degenerate']}",
         f"Simplex candidate: {metrics['simplex_selected_candidate']}",
         f"Simplex projection gap: {metrics['simplex_projection_gap']:.4f}",

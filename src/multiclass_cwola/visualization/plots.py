@@ -133,6 +133,7 @@ def plot_kspace_scatter(
     out_path: str | Path,
     max_points: int = 1500,
     title: str = "Decoded latent posterior",
+    label_name: str = "class",
 ) -> None:
     """Scatter plot of decoded latent-class coordinates alpha(x) in Delta^{K-1}.
 
@@ -155,7 +156,8 @@ def plot_kspace_scatter(
         for class_id in np.unique(subset_labels):
             mask = subset_labels == class_id
             plt.scatter(
-                points_2d[mask, 0], points_2d[mask, 1], s=10, alpha=0.6, label=f"class {class_id}"
+                points_2d[mask, 0], points_2d[mask, 1], s=10, alpha=0.6,
+                label=f"{label_name} {class_id}",
             )
         has_legend = True
     _draw_simplex_edges(
@@ -184,6 +186,7 @@ def plot_mspace_simplex(
     out_path: str | Path,
     max_points: int = 2000,
     title: str = "Posterior geometry (M-space)",
+    label_name: str = "class",
 ) -> None:
     """M-space simplex geometry plot (paper figure Panel a / Panel b).
 
@@ -236,7 +239,7 @@ def plot_mspace_simplex(
         for class_id in np.unique(subset_labels):
             mask = subset_labels == class_id
             ax.scatter(pts_2d[mask, 0], pts_2d[mask, 1], s=8, alpha=0.5,
-                       label=f"class {class_id}", rasterized=True)
+                       label=f"{label_name} {class_id}", rasterized=True)
 
     # Fitted decision axes (transparent, no legend entry).
     if f_starts_2d is not None and f_ends_2d is not None:
@@ -316,5 +319,4 @@ def plot_metric_curve(
     plt.tight_layout()
     plt.savefig(out_path, dpi=200)
     plt.close()
-
 

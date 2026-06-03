@@ -28,8 +28,8 @@ class MixtureDatasetBundle:
     train: SplitData
     val: SplitData
     test: SplitData
-    pi: np.ndarray
-    source_given_class: np.ndarray
+    pi: np.ndarray | None = None
+    source_given_class: np.ndarray | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     input_shape: tuple[int, ...] = ()
     task_type: str = "tabular"
