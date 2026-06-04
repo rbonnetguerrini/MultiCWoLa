@@ -45,5 +45,12 @@ target-version = "py310"
 select = ["E", "F", "I", "B", "UP", "N", "W"]
 ignore = ["B008", "E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# `X` is the conventional sklearn-style design-matrix name in the public API;
+# `K`/`M`/`Mp` are the paper's canonical symbols (as in visualization/plots.py).
+"src/multiclass_cwola/api.py" = ["N803", "N806"]
+"src/multiclass_cwola/diagnostics.py" = ["N806"]
+"tests/test_api.py" = ["N803", "N806"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
