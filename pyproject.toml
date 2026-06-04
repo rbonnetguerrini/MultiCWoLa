@@ -5,9 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "multiclass-cwola"
 version = "0.1.0"
-description = "Multiclass Classification without Labels via Posterior Simplex Geometry (anonymous release)"
+description = "Multiclass Classification without Labels via Posterior Simplex Geometry"
 readme = "README.md"
 requires-python = ">=3.10"
+# Affiliations (not a PEP 621 field, recorded here for reference):
+#   Raphaël Bonnet-Guerrini   -- Computer Science Department, Università degli Studi di Milano
+#   Johann Ioannou-Nikolaides -- Niels Bohr Institute, University of Copenhagen
+authors = [
+  {name = "Raphaël Bonnet-Guerrini", email = "rbonnetguerrini@gmail.com"},
+  {name = "Johann Ioannou-Nikolaides", email = "johann.nikolaides@nbi.ku.dk"},
+]
 dependencies = [
   "hydra-core>=1.3",
   "matplotlib>=3.8",
