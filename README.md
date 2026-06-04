@@ -78,6 +78,64 @@ python scripts/run_real.py experiment=realdata_hidden_priors \
 All commands use Hydra configuration files under `configs/` and write run
 outputs under `outputs/` by default.
 
+## Python API (use on your own data)
+
+For applying the method to your own data without Hydra, use the `MultiCWoLa`
+estimator. The only supervision required is the **mixture identity** of each
+example — no class labels and no mixture proportions.
+
+```python
+from multiclass_cwola import MultiCWoLa
+
+# X: features (N, D) or images (N, C, H, W); source: mixture id per example
+model = MultiCWoLa(K=3).fit(X, source)
+
+model.class_posteriors_   # decoded latent posteriors alpha(x), shape (N, K)
+model.pi_                 # recovered mixing matrix Pi_hat (M, K) — often the science target
+model.predict(X_new)      # latent-class predictions (up to a permutation)
+
+print(model.report())     # A1/A2/A3 trust diagnostics (see below)
+```
+
+Two recovery modes are available via `mode=` (paper Sec. 3.2):
+
+- `mode="posthoc"` (default, R1): train an unconstrained M-way classifier, then
+  fit a simplex to its posterior cloud. Works with any backbone below.
+- `mode="bottleneck"` (R2): train a classifier whose head factorises as
+  `g(x) = Pi @ alpha(x)`, enforcing the geometry during training. `alpha(x)` and
+  `Pi` are read straight off the head. Requires a trainable backbone
+  (`"auto"`/`"mlp"`/`"cnn"`), e.g.:
+
+  ```python
+  model = MultiCWoLa(K=3, mode="bottleneck",
+                     train_kwargs={"bottleneck_warmup_epochs": 2}).fit(X, source)
+  ```
+
+The simplex machinery only needs the source posterior `g(x) = P(m | x)`, so for
+`mode="posthoc"` the backbone is interchangeable (`backbone=` argument):
+
+- `"auto"` (default): internal MLP for tabular `X`, CNN for image `X`.
+- `"precomputed"` (or `model.fit_posteriors(g, source)`): pass an already-computed
+  source posterior `g` of shape `(N, M)` from any model.
+- a fitted estimator exposing `predict_proba(X)` (scikit-learn, XGBoost, ...).
+- any callable mapping `X -> g`.
+
+### Trust diagnostics
+
+On your own data there are usually no labels to validate against, so the method's
+assumptions are surfaced as runnable checks via `model.report()`:
+
+- **A2 (rank):** conditioning / volume of the recovered simplex — flags collapse.
+- **A3 (separability):** how close the cloud gets to each vertex — weak anchors
+  shrink the simplex and degrade identification.
+- **A1 (shared class-conditionals):** an MxM mixture-recovery check comparing the
+  classifier's empirical mixture separability against the composition limit;
+  excess separability signals a per-mixture artifact rather than real class
+  structure.
+
+Each check returns an `ok` / `warn` / `fail` status. As the paper notes, recovered
+classes should still be validated on held-out labels before high-stakes use.
+
 ## Method Variants
 
 ### Post-hoc Simplex Fitting
