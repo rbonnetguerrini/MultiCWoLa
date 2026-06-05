@@ -83,6 +83,15 @@ class BottleneckSimplexHead(nn.Module):
     Pair with ``nn.NLLLoss`` for source classification (the trainer picks this
     up via ``returns_log_probs=True`` on the parent model).
 
+    Bring-your-own-backbone usage: drop this in as the final head of any model
+    that produces ``(B, input_dim)`` embeddings, train with cross-entropy / NLL
+    on mixture labels, then extract the recovered structure:
+
+      - ``predict_latent(features)`` -> latent posteriors alpha(x) of shape (B, K);
+        pass your backbone's embeddings (the same tensor this head receives).
+      - ``pi()`` -> recovered column-stochastic mixing matrix Pi_hat of shape (M, K);
+        its columns are the simplex vertices in source-posterior space.
+
     Knobs (all opt-in via the ``model.bottleneck`` config block):
       - ``pi_normalization``: ``"softmax"`` (default, bounded sharpness) or
         ``"softplus"`` (vertices can approach one-hot).
@@ -159,6 +168,16 @@ class BottleneckSimplexHead(nn.Module):
     def alpha(self, features: torch.Tensor) -> torch.Tensor:
         """Return latent posteriors alpha(x) of shape (B, K)."""
         return torch.softmax(self.latent_linear(features), dim=1)
+
+    @torch.no_grad()
+    def predict_latent(self, features: torch.Tensor) -> torch.Tensor:
+        """Inference-time latent posteriors alpha(x) of shape (B, K).
+
+        Documented extraction entry point for the bring-your-own-backbone path:
+        pass the embeddings your backbone feeds this head. Same as :meth:`alpha`
+        but under ``no_grad`` and with the module in eval semantics for callers.
+        """
+        return self.alpha(features)
 
     def slack_residual_distribution(self) -> torch.Tensor:
         """Return the column-stochastic slack residual c of shape (M,)."""

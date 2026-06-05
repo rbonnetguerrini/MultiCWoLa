@@ -1503,3 +1503,24 @@ def transform_simplex_points(points: np.ndarray, fit: SimplexFitResult) -> np.nd
     if fit.preprocessing is None:
         return points
     return fit.preprocessing.transform(points)
+
+
+def decode_posteriors(g: np.ndarray, fit: SimplexFitResult) -> np.ndarray:
+    """Decode source posteriors into latent-class posteriors via a fitted simplex.
+
+    This is the canonical "apply a fitted simplex to new posteriors" step: fit the
+    simplex once on a train/val posterior cloud, then call this on any held-out
+    posteriors to get latent-class coordinates.
+
+    Parameters
+    ----------
+    g : (N, M) source posteriors P(m | x), e.g. from your own M-way classifier.
+    fit : SimplexFitResult returned by :func:`fit_simplex`.
+
+    Returns
+    -------
+    (N, K) latent-class posteriors alpha(x) (barycentric coordinates against the
+    fitted vertices, projected onto the simplex).
+    """
+    points = transform_simplex_points(g, fit)
+    return batch_simplex_least_squares(points, fit.vertices)

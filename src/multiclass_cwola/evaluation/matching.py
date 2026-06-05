@@ -34,6 +34,50 @@ def align_probabilities(
     return aligned
 
 
+def align_latent_classes(
+    alpha: np.ndarray,
+    y: np.ndarray,
+    labeled_index: np.ndarray | None = None,
+    num_classes: int | None = None,
+) -> tuple[np.ndarray, dict[int, int]]:
+    """Resolve the latent-class permutation from a small labeled subset.
+
+    Decoded latent classes are only identifiable up to a permutation (a binary
+    flip when K=2). Given true labels for some rows, this computes the
+    Hungarian permutation on those rows and applies it to *all* of ``alpha``,
+    removing the ambiguity without a per-class score-and-flip workaround.
+
+    Parameters
+    ----------
+    alpha : (N, K) decoded latent posteriors, e.g. from :func:`decode_posteriors`.
+    y : true class labels. Either length ``N`` (aligned to ``alpha``), or length
+        ``len(labeled_index)`` when ``labeled_index`` is given.
+    labeled_index : optional indices of the labeled rows of ``alpha``. When
+        omitted, ``y`` is assumed to cover every row of ``alpha``.
+    num_classes : K; defaults to ``alpha.shape[1]``.
+
+    Returns
+    -------
+    (aligned_alpha, mapping) where ``aligned_alpha`` has columns permuted so
+    class ``k`` matches the true label ``k``, and ``mapping`` maps predicted ->
+    true class index.
+    """
+    alpha = np.asarray(alpha)
+    y = np.asarray(y).astype(int)
+    k = int(num_classes) if num_classes is not None else alpha.shape[1]
+    if labeled_index is None:
+        labeled_alpha = alpha
+    else:
+        labeled_alpha = alpha[np.asarray(labeled_index)]
+    if len(labeled_alpha) != len(y):
+        raise ValueError(
+            "y must match the number of labeled rows "
+            f"({len(labeled_alpha)} alpha rows vs {len(y)} labels)."
+        )
+    _, mapping = match_label_permutation(y, labeled_alpha.argmax(axis=1), num_classes=k)
+    return align_probabilities(alpha, mapping, num_classes=k), mapping
+
+
 def match_vertices(
     estimated_vertices: np.ndarray,
     true_vertices: np.ndarray,

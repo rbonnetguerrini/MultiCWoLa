@@ -57,7 +57,7 @@ ignore = ["B008", "E501"]
 # `K`/`M`/`Mp` are the paper's canonical symbols (as in visualization/plots.py).
 "src/multiclass_cwola/api.py" = ["N803", "N806"]
 "src/multiclass_cwola/diagnostics.py" = ["N806"]
-"tests/test_api.py" = ["N803", "N806"]
+"tests/*" = ["N803", "N806"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

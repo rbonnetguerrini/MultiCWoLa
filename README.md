@@ -78,47 +78,81 @@ python scripts/run_real.py experiment=realdata_hidden_priors \
 All commands use Hydra configuration files under `configs/` and write run
 outputs under `outputs/` by default.
 
-## Python API (use on your own data)
+## Python API (bring your own model)
 
-For applying the method to your own data without Hydra, use the `MultiCWoLa`
-estimator. The only supervision required is the **mixture identity** of each
-example — no class labels and no mixture proportions.
+The library never trains a model — **you plug in your own**. `MultiCWoLa` provides the
+structure around the two recovery methods (post-hoc simplex fitting and the bottleneck),
+plus alignment, trust diagnostics, and mixture-vs-latent plotting. The only supervision
+required is the **mixture identity** of each example; true class labels are optional and
+used only to resolve the latent-class permutation and to evaluate.
+
+### Post-hoc (R1) — fit a simplex to your classifier's posteriors
+
+Train any M-way classifier (any framework, any data loader), then hand over its source
+posteriors `g(x) = P(m | x)`:
 
 ```python
 from multiclass_cwola import MultiCWoLa
 
-# X: features (N, D) or images (N, C, H, W); source: mixture id per example
-model = MultiCWoLa(K=3).fit(X, source)
+g_train = my_model.predict_proba(X_train)        # (N, M) = P(mixture | x), your model
+model = MultiCWoLa(K=3).fit_posteriors(g_train, source, y=y_optional)
 
-model.class_posteriors_   # decoded latent posteriors alpha(x), shape (N, K)
-model.pi_                 # recovered mixing matrix Pi_hat (M, K) — often the science target
-model.predict(X_new)      # latent-class predictions (up to a permutation)
+model.class_posteriors_     # decoded latent posteriors alpha(x), (N, K)
+model.pi_                   # recovered mixing matrix Pi_hat (M, K) — often the science target
+alpha_eval = model.predict_proba(g_eval)         # decode held-out posteriors
 
-print(model.report())     # A1/A2/A3 trust diagnostics (see below)
+print(model.report())                            # A1/A2/A3 trust diagnostics (below)
+model.plot("out/", latent_labels=y, true_pi=pi)  # comparison figures (below)
 ```
 
-Two recovery modes are available via `mode=` (paper Sec. 3.2):
+Prefer plain functions? The same steps without the class:
 
-- `mode="posthoc"` (default, R1): train an unconstrained M-way classifier, then
-  fit a simplex to its posterior cloud. Works with any backbone below.
-- `mode="bottleneck"` (R2): train a classifier whose head factorises as
-  `g(x) = Pi @ alpha(x)`, enforcing the geometry during training. `alpha(x)` and
-  `Pi` are read straight off the head. Requires a trainable backbone
-  (`"auto"`/`"mlp"`/`"cnn"`), e.g.:
+```python
+from multiclass_cwola import fit_simplex, decode_posteriors, align_latent_classes
 
-  ```python
-  model = MultiCWoLa(K=3, mode="bottleneck",
-                     train_kwargs={"bottleneck_warmup_epochs": 2}).fit(X, source)
-  ```
+fit = fit_simplex(g_train, num_vertices=3, config={"method": "archetypal"})
+print(fit.diagnostics)                           # per-fit A1/A2/A3 checks
+alpha_eval = decode_posteriors(g_eval, fit)
+aligned, mapping = align_latent_classes(alpha_eval, y_small, labeled_index=idx)  # resolves K=2 flip
+```
 
-The simplex machinery only needs the source posterior `g(x) = P(m | x)`, so for
-`mode="posthoc"` the backbone is interchangeable (`backbone=` argument):
+**Calibration (optional but recommended).** Overconfident logits distort the posterior
+cloud. Fit a temperature/vector scaler on a held-out split of the source logits first:
 
-- `"auto"` (default): internal MLP for tabular `X`, CNN for image `X`.
-- `"precomputed"` (or `model.fit_posteriors(g, source)`): pass an already-computed
-  source posterior `g` of shape `(N, M)` from any model.
-- a fitted estimator exposing `predict_proba(X)` (scikit-learn, XGBoost, ...).
-- any callable mapping `X -> g`.
+```python
+from multiclass_cwola import fit_calibrator, calibrate_logits
+
+calib = fit_calibrator(val_logits, val_source, method="temperature")
+g_train = calibrate_logits(train_logits, calib)
+```
+
+### Bottleneck (R2) — a drop-in head you train yourself
+
+Replace your model's final linear layer with `BottleneckSimplexHead`, so the network
+factorises as `g(x) = Pi @ alpha(x)`. Train it with ordinary cross-entropy / NLL on the
+**mixture labels** — no custom loss — then extract the recovered structure and hand it over:
+
+```python
+from multiclass_cwola import BottleneckSimplexHead, MultiCWoLa
+
+head = BottleneckSimplexHead(input_dim=embed_dim, num_sources=M, num_classes=K)
+# attach to your backbone, train on mixture labels (a few warm-up epochs with Pi frozen helps) ...
+
+alpha = head.predict_latent(features).cpu().numpy()   # (N, K) latent posteriors
+pi    = head.pi().detach().cpu().numpy()              # (M, K) column-stochastic mixing matrix
+
+model = MultiCWoLa(K=K).fit_bottleneck(alpha, pi, source, y=y_optional)
+print(model.report());  model.plot("out/", latent_labels=y, true_pi=pi)
+```
+
+### Plots — mixture results vs. latent classes
+
+`model.plot(outdir, latent_labels=None, true_pi=None)` writes the comparison figures
+into `outdir`: the decoded latent-posterior scatter, the M-space source-posterior
+geometry with the recovered simplex (and the oracle simplex overlaid when `true_pi` is
+given), the recovered `Pi_hat` heatmap (plus the oracle when available), and the MxM
+mixture-recovery confusion. Points are coloured by latent class when `latent_labels` is
+provided, otherwise by mixture id.
 
 ### Trust diagnostics
 
