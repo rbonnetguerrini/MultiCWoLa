@@ -1,9 +1,0 @@
-name: archetypal_edges_density
-method: archetypal_edges_density
-density_power: 1.0
-edges_kwargs:
-  num_ransac_iters: 200
-  min_inliers_fraction: 0.05
-  refine_max_iter: 40
-preprocess: none
-preprocess_dim: -1

@@ -1,6 +1,0 @@
-name: heuristic
-method: heuristic
-max_iter: 1
-tol: 1.0e-5
-ridge: 1.0e-4
-

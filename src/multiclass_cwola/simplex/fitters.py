@@ -1020,8 +1020,6 @@ def _ransac_line_segment(
     if n < max(min_inliers, 2):
         return None
     best_inliers: np.ndarray | None = None
-    best_anchor = np.zeros(points.shape[1])
-    best_direction = np.zeros(points.shape[1])
     for _ in range(num_iters):
         idx = rng.choice(n, size=2, replace=False)
         a = points[idx[0]]
@@ -1038,8 +1036,6 @@ def _ransac_line_segment(
         inliers = np.where(dist < inlier_radius)[0]
         if best_inliers is None or len(inliers) > len(best_inliers):
             best_inliers = inliers
-            best_anchor = a
-            best_direction = direction
     if best_inliers is None or len(best_inliers) < min_inliers:
         return None
     inlier_pts = points[best_inliers]
@@ -1101,14 +1097,12 @@ def fit_archetypal_edges_simplex(
     if radius is None:
         spread = float(np.mean(np.std(centered, axis=0)))
         radius = max(spread * 0.08, 1e-3)
-    suppress = suppression_radius if suppression_radius is not None else radius * 1.5
     min_inliers = max(int(min_inliers_fraction * n), num_vertices + 1)
 
     target_lines = num_vertices * (num_vertices - 1) // 2
     if target_lines == 0:
         target_lines = 1
 
-    available = centered.copy()
     available_mask = np.ones(n, dtype=bool)
     discovered: list[tuple[np.ndarray, np.ndarray]] = []
 

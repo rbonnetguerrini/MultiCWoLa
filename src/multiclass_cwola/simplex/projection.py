@@ -63,3 +63,9 @@ def batch_simplex_least_squares(y: np.ndarray, vertices: np.ndarray) -> np.ndarr
     """Vectorised simplex-constrained least squares for each row of y."""
     raw = batch_unconstrained_least_squares(y, vertices)
     return project_rows_to_simplex(raw)
+
+
+def source_given_class_from_pi(pi: np.ndarray) -> np.ndarray:
+    """Convert row-stochastic Pi[m, k] into source-given-class vertices V[k, m]."""
+    col_sums = np.clip(pi.sum(axis=0, keepdims=True), 1e-8, None)
+    return (pi / col_sums).T

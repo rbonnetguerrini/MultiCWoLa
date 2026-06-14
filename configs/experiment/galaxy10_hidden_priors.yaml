@@ -1,3 +1,0 @@
-name: galaxy10_hidden_priors
-description: Galaxy10 DECaLS run with hidden train labels and pretrained ResNet50 backbone.
-suite: single

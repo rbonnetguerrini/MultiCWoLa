@@ -1,7 +1,0 @@
-defaults:
-  - galaxy10
-
-M: 20
-train_per_source: 600           # keep total budget similar (~12k)
-val_per_source: 100
-test_per_source: 120

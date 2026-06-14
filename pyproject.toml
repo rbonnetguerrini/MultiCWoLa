@@ -16,15 +16,12 @@ authors = [
   {name = "Johann Ioannou-Nikolaides", email = "johann.nikolaides@nbi.ku.dk"},
 ]
 dependencies = [
-  "hydra-core>=1.3",
   "matplotlib>=3.8",
   "numpy>=1.26",
-  "omegaconf>=2.3",
   "pandas>=2.2",
   "scikit-learn>=1.4",
   "scipy>=1.12",
   "torch>=2.2",
-  "torchvision>=0.17",
 ]
 
 [project.optional-dependencies]
@@ -54,9 +51,12 @@ ignore = ["B008", "E501"]
 
 [tool.ruff.lint.per-file-ignores]
 # `X` is the conventional sklearn-style design-matrix name in the public API;
-# `K`/`M`/`Mp` are the paper's canonical symbols (as in visualization/plots.py).
+# `K`/`M`/`Mp` are the method's canonical symbols (latent classes / mixtures).
 "src/multiclass_cwola/api.py" = ["N803", "N806"]
 "src/multiclass_cwola/diagnostics.py" = ["N806"]
+"src/multiclass_cwola/simplex/*.py" = ["N802", "N803", "N806"]
+"src/multiclass_cwola/models/backbones.py" = ["N802", "N803", "N806"]
+"src/multiclass_cwola/visualization/plots.py" = ["N802", "N803", "N806"]
 "tests/*" = ["N803", "N806"]
 
 [tool.pytest.ini_options]

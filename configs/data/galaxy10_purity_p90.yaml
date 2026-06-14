@@ -1,8 +1,0 @@
-defaults:
-  - galaxy10
-
-# Purity sweep cell, p=0.90: pi_m ~= 0.10*(1/K) + 0.90*e_m. Near-pure
-# mixtures (each source dominated by one class) -- easy regime.
-pi_mode: dirichlet
-pi_dirichlet_alpha: 1000.0
-condition_strength: 0.9

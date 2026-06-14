@@ -33,7 +33,6 @@ from typing import Any
 
 import numpy as np
 
-from multiclass_cwola.data.common import source_given_class_from_pi
 from multiclass_cwola.diagnostics import DiagnosticsReport, compute_diagnostics
 from multiclass_cwola.evaluation.matching import align_latent_classes, align_probabilities
 from multiclass_cwola.simplex.fitters import (
@@ -41,6 +40,7 @@ from multiclass_cwola.simplex.fitters import (
     decode_posteriors,
     fit_simplex,
 )
+from multiclass_cwola.simplex.projection import source_given_class_from_pi
 from multiclass_cwola.visualization.plots import (
     plot_kspace_scatter,
     plot_mixture_confusion,
