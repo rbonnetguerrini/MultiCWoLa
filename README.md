@@ -9,7 +9,7 @@
 <a href="https://pytorch.org"><img alt="pytorch" src="https://img.shields.io/badge/PyTorch-2.0-DC583A.svg?style=flat&logo=pytorch"></a>
 </p>
 
-MultiCWoLa recovers latent class posteriors from multiple unlabeled mixtures —
+MultiCWoLa recovers latent class posteriors from multiple unlabeled mixtures,
 no class labels required. The only supervision is the **mixture identity** of each
 example (`source`). Class posteriors are recovered up to a permutation by exploiting
 the simplex geometry of the Bayes-optimal source posterior.
@@ -36,11 +36,11 @@ Requires Python 3.10-3.12 and PyTorch >= 2.2.
 
 ## Python API (bring your own model)
 
-The library never trains a model — **you plug in your own**. `MultiCWoLa` provides the
+The library never trains a model, **you plug in your own**. `MultiCWoLa` provides the
 structure around two recovery methods (post-hoc simplex fitting and the bottleneck),
 plus alignment, trust diagnostics, and mixture-vs-latent plotting.
 
-### Post-hoc (R1) — fit a simplex to your classifier's posteriors
+### Post-hoc (R1): fit a simplex to your classifier's posteriors
 
 Train any M-way classifier (any framework, any data loader), then hand over its source
 posteriors `g(x) = P(m | x)`:
@@ -52,7 +52,7 @@ g_train = my_model.predict_proba(X_train)        # (N, M) = P(mixture | x), your
 model = MultiCWoLa(K=3).fit_posteriors(g_train, source, y=y_optional)
 
 model.class_posteriors_     # decoded latent posteriors alpha(x), (N, K)
-model.pi_                   # recovered mixing matrix Pi_hat (M, K) — often the science target
+model.pi_                   # recovered mixing matrix Pi_hat (M, K), often the science target
 alpha_eval = model.predict_proba(g_eval)         # decode held-out posteriors
 
 print(model.report())                            # A1/A2/A3 trust diagnostics (below)
@@ -80,11 +80,11 @@ calib = fit_calibrator(val_logits, val_source, method="temperature")
 g_train = calibrate_logits(train_logits, calib)
 ```
 
-### Bottleneck (R2) — a drop-in head you train yourself
+### Bottleneck (R2): a drop-in head you train yourself
 
 Replace your model's final linear layer with `BottleneckSimplexHead`, so the network
 factorises as `g(x) = Pi @ alpha(x)`. Train it with ordinary cross-entropy / NLL on the
-**mixture labels** — no custom loss — then extract the recovered structure and hand it over:
+**mixture labels**, no custom loss, then extract the recovered structure and hand it over:
 
 ```python
 from multiclass_cwola import BottleneckSimplexHead, MultiCWoLa
@@ -99,7 +99,7 @@ model = MultiCWoLa(K=K).fit_bottleneck(alpha, pi, source, y=y_optional)
 print(model.report());  model.plot("out/", latent_labels=y, true_pi=pi)
 ```
 
-### Plots — mixture results vs. latent classes
+### Plots: mixture results vs. latent classes
 
 `model.plot(outdir, latent_labels=None, true_pi=None)` writes the comparison figures
 into `outdir`: the decoded latent-posterior scatter, the M-space source-posterior
@@ -113,8 +113,8 @@ provided, otherwise by mixture id.
 On your own data there are usually no labels to validate against, so the method's
 assumptions are surfaced as runnable checks via `model.report()`:
 
-- **A2 (rank):** conditioning / volume of the recovered simplex — flags collapse.
-- **A3 (separability):** how close the cloud gets to each vertex — weak anchors
+- **A2 (rank):** conditioning / volume of the recovered simplex, flags collapse.
+- **A3 (separability):** how close the cloud gets to each vertex, weak anchors
   shrink the simplex and degrade identification.
 - **A1 (shared class-conditionals):** an MxM mixture-recovery check comparing the
   classifier's empirical mixture separability against the composition limit;
